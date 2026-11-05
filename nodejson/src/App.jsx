@@ -1,100 +1,98 @@
 
 import { useState } from "react";
-import ReactMarkdown from "react-markdown";
-import "./App.css";
 
 function App() {
   const [message, setMessage] = useState("");
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
+  const [sessionId, setSessionId] = useState("");
+  const [chatHistory, setChatHistory] = useState([]);
+  const [response, setResponse] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    setError("");
-    setResult(null);
+  const startNewChat = async () => {
+    try {
+      const res = await fetch("http://127.0.0.1:8000/api/chat/new", {
+        method: "POST",
+      });
 
-    if (!message.trim()) {
-      setError("Please enter a message.");
+      if (!res.ok) throw new Error("Could not create chat");
+
+      const data = await res.json();
+
+      setSessionId(data.session_id);
+      setChatHistory([]);
+      setResponse("New chat created successfully!");
+    } catch (error) {
+      setResponse(error.message);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!message.trim() || !sessionId) {
+      setResponse("Create a new chat first and enter a message.");
       return;
     }
 
     setLoading(true);
+    setResponse("");
 
     try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/respond",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ message }),
-          signal: AbortSignal.timeout(15000),
-        }
-      );
+      const res = await fetch("http://127.0.0.1:8000/api/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: message,
+          session_id: sessionId,
+        }),
+      });
 
-      const data = await response.json();
+      if (!res.ok) throw new Error("Backend request failed");
 
-      if (!response.ok) {
-        throw new Error(
-          typeof data.detail === "string"
-            ? data.detail
-            : "Request failed. Check your backend."
-        );
-      }
+      const data = await res.json();
 
-      setResult(data);
-    } catch (err) {
-      if (err.name === "TimeoutError") {
-        setError("Request timed out. Please try again.");
-      } else if (err.name === "AbortError") {
-        setError("Request was cancelled.");
-      } else {
-        setError(
-          err.message || "Could not connect to the backend."
-        );
-      }
+      setChatHistory(data.chat_history);
+      setMessage("");
+    } catch (error) {
+      setResponse(error.message);
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="container">
-      <h1>AI Response Generator</h1>
-      <p>Enter a message to generate an AI response.</p>
+    <div style={{ padding: "30px", fontFamily: "Arial" }}>
+      <h1>Groq AI Chat Application</h1>
 
-      <form onSubmit={handleSubmit}>
-        <textarea
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Type your message..."
-          rows={4}
-        />
+      <button onClick={startNewChat}>
+        New Chat
+      </button>
 
-        <button type="submit" disabled={loading}>
-          {loading ? "Generating..." : "Generate Response"}
-        </button>
-      </form>
+      <p>Session ID: {sessionId || "No session created"}</p>
 
-      {error && <p className="error">{error}</p>}
+      <input
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Enter your message"
+      />
 
-      {result && (
-        <section className="result">
-          <h2>Detected Intent</h2>
-          <p>{result.intent ?? "Not provided"}</p>
+      <button onClick={sendMessage} disabled={loading}>
+        {loading ? "Sending..." : "Send Message"}
+      </button>
 
-          <h2>Summary</h2>
-          <p>{result.summary ?? "Not provided"}</p>
+      <h3>Conversation History</h3>
 
-          <h2>AI Response</h2>
-          <ReactMarkdown>
-            {result.answer_markdown ?? "No response was returned."}
-          </ReactMarkdown>
-        </section>
-      )}
-    </main>
+      {chatHistory.map((chat, index) => (
+        <div key={index}>
+          <strong>
+            {chat.role === "user" ? "You" : "AI"}:
+          </strong>
+          <p>{chat.content}</p>
+        </div>
+      ))}
+
+      {response && <p>{response}</p>}
+    </div>
   );
 }
 
